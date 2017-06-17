@@ -38,76 +38,84 @@ class PanTompkins(object):
         self.alignsignals()
         
 
-        # Initialize parameters via the two learning phases
+        # Initialize learning parameters via the two learning phases
         self.learnparams()
 
-        # Loop through every index and detect qrs locations
-        for i in range(self.siglen):
-            pass
+        # Loop through every index and detect qrs locations.
+        # Start from 200ms after the first qrs detected in the
+        # learning phase
+        for i in range(self.qrs_inds[0]+41, self.siglen):
 
-        # Go through each index and detect qrs complexes.
-    for i in range(siglen):
-        # Determine whether the current index is a peak
-        # for each signal
-        is_peak_F = ispeak(sig_F, siglen, i, 20)
-        is_peak_I = ispeak(sig_I, siglen, i, 20)
-        
-        # Whether the current index is a signal peak or noise peak
-        is_sigpeak_F = False
-        is_noisepeak_F = False
-        is_sigpeak_I = False
-        is_noisepeak_I = False
-        
-        # If peaks are detected, classify them as signal or noise
-        # for their respective channels
-        
-        if is_peak_F:
-            # Satisfied signal peak criteria for the channel
-            # but not necessarily overall
-            if sig_F[i] > thresh_F:
-                is_sigpeak_F = True
-            # Did not satisfy signal peak criteria.
-            # Label as noise peak
-            else:
-                is_noisepeak_F = True
-                
-        if is_peak_I:
-            # The
-            if sig_I[i] > thresh_I:
-                is_peak_sig_I = True
-            else:
-         
-        # Check for double signal peak coincidence and at least >200ms (40 samples samples)
-        # since the previous r peak
-        is_sigpeak = is_sigpeak_F and is_sigpeak_I and ()
-        
-        # Found a signal peak!
-        if is_sigpeak:
+            # Number of indices from the previous r peak to this index
+            last_r_distance = i - qrs_inds[-1]
+
+            # Determine whether the current index is a peak
+            # for each signal
+            is_peak_F = ispeak(sig_F, self.siglen, i, 20)
+            is_peak_I = ispeak(sig_I, self.siglen, i, 20)
             
-            # BUT WAIT, THERE'S MORE! It could be a T-Wave ...
+            # Whether the current index is a signal peak or noise peak
+            is_sigpeak_F = False
+            is_sigpeak_I = False
+            is_noisepeak_F = False
+            is_noisepeak_I = False
             
-            # When an rr interval < 360ms (72 samples), it is checked 
-            # to determine whether it is a T-Wave
-            if i - prev_r_ind < 360:
-                
+            # If peaks are detected, classify them as signal or noise
+            # for their respective channels
             
-            # Update running parameters
-            
-            sigpeak_I = 0.875*sigpeak_I + 0.125*sig_I[i]
-            sigpeak_F = 0.875*sigpeak_I + 0.125*sig_I[i]
+            if is_peak_F:
+                # Satisfied signal peak criteria for the channel
+                if sig_F[i] > self.thresh_F:
+                    is_sigpeak_F = True
+                # Did not satisfy signal peak criteria.
+                # Label as noise peak
+                else:
+                    is_noisepeak_F = True
+                    
+            if is_peak_I:
+                # Satisfied signal peak criteria for the channel
+                if sig_I[i] > self.thresh_I:
+                    is_peak_sig_I = True
+                # Did not satisfy signal peak criteria.
+                # Label as noise peak
+                else:
+                    is_noisepeak_I = True
              
-            last_r_ind = i
-            rr_limitavg
-            rr_limitavg
+            # Check for double signal peak coincidence and at least >200ms (40 samples samples)
+            # since the previous r peak
+            is_sigpeak = is_sigpeak_F and is_sigpeak_I and (last_r_distance>40)
             
-        # Not a signal peak. Update running parameters
-        # if any other peaks are detected
-        elif is_peak_F:
+            # The peak crosses thresholds for each channel and >200ms from previous peak
+            if is_sigpeak:
+                
+                # If the rr interval < 360ms (72 samples), the peak is checked 
+                # to determine whether it is a T-Wave. This is the final test
+                # to run before the peak can be marked as a qrs complex.
+                if last_r_distance < 72:
+                    
+                
+                    # "If the maximal slope that occurs during this waveform
+                    # is less than half that of the QRS waveform that preceded it,
+                    # it is identified to be a T-wave"
+
+                    # Update running parameters
+                    
+                    sigpeak_I = 0.875*sigpeak_I + 0.125*sig_I[i]
+                    sigpeak_F = 0.875*sigpeak_I + 0.125*sig_I[i]
+                     
+                    last_r_ind = i
+                    rr_limitavg
+                    rr_limitavg
+                
+
+            # Not a signal peak. Update running parameters
+            # if any other peaks are detected
+            elif is_peak_F:
+                
             
-        
-        last_r_distance = i - last_r_ind
-        
-        if last_r_distance > 
+            last_r_distance = i - last_r_ind
+            
+            if last_r_distance > 
     
     
     qrs = np.zeros(10)
@@ -118,7 +126,7 @@ class PanTompkins(object):
     qrs = qrs.astype('int64')
     
     
-    return qrs
+    return
 
 
 
@@ -126,6 +134,7 @@ class PanTompkins(object):
     def resample(self):
         if self.fs != 200:
             self.sig = scisig.resample(self.sig, int(self.siglen*200/fs))
+        return
     
     # Bandpass filter the signal from 5-15Hz
     def bandpass(self, plotsteps):
@@ -144,6 +153,7 @@ class PanTompkins(object):
             plt.plot(self.sig_F)
             plt.legend(['After LP', 'After LP+HP'])
             plt.show()
+        return
 
     # Compute the moving wave integration waveform from the filtered signal
     def mwi(sig, plotsteps):
@@ -166,6 +176,7 @@ class PanTompkins(object):
             plt.plot(self.sig_I)
             plt.legend(['deriv', 'mwi'])
             plt.show()
+        return
     
     # Align the filtered and integrated signal with the original
     def alignsignals(self):
@@ -173,10 +184,12 @@ class PanTompkins(object):
 
         self.sig_I = self.sig_I
 
+        return
+
 
     def learnparams(self):
         """
-        Initialize parameters using the start of the waveforms
+        Initialize detection parameters using the start of the waveforms
         during the two learning phases described.
         
         "Learning phase 1 requires about 2s to initialize
@@ -192,18 +205,19 @@ class PanTompkins(object):
         This code is not detailed in the Pan-Tompkins
         paper. The PT algorithm requires a threshold to
         categorize peaks as signal or noise, but the
-        threshold is calculated from noise and signal 
-        peaks. There is a circular dependency when 
-        none of the fields are initialized. Therefore this learning phase will detect signal peaks using a
-        different method, and estimate the threshold using those peaks.
+        threshold is calculated from noise and signal
+        peaks. There is a circular dependency when
+        none of the fields are initialized. Therefore this 
+        learning phase will detect initial signal peaks using a
+        different method, and estimate the threshold using
+        those peaks.
         
         This function works as follows:
         - Try to find at least 2 signal peaks (qrs complexes) in the
-          first N seconds of both signals using simple low order 
+          first 2 seconds of both signals using simple low order 
           moments. Signal peaks are only defined when the same index is
-          determined to be a peak in both signals. Start with N==2.
-          If fewer than 2 signal peaks are detected, increment N and
-          try again.
+          determined to be a peak in both signals. If fewer than 2 signal
+          peaks are detected, shift to the next 2 window and try again.
         - Using the classified estimated peaks, threshold1 is estimated as
           based on the steady state estimate equation: thres = 0.75*noisepeak + 0.25*sigpeak
           using the mean of the noisepeaks and signalpeaks instead of the
@@ -216,10 +230,12 @@ class PanTompkins(object):
         radius = 20
         # The signal start duration to use for learning
         learntime = 2
-        
-        while :
-            wavelearn_F = filtsig[:200*learntime]
-            wavelearn_I = mwi[:200*learntime]
+        # The window number to inspect in the signal
+        windownum = 0
+
+        while (windownum+1)*learntime*200<self.siglen:
+            wavelearn_F = self.sig_F[windownum*learntime*200:(windownum+1)*learntime*200]
+            wavelearn_I = self.sig_I[windownum*learntime*200:(windownum+1)*learntime*200]
             
             # Find peaks in the signals
             peakinds_F = findpeaks_radius(wavelearn_F, radius)
@@ -242,43 +258,51 @@ class PanTompkins(object):
             noisepeakinds_F = np.setdiff1d(peakinds_F, sigpeakinds)
             noisepeakinds_I = np.setdiff1d(peakinds_I, sigpeakinds)
             
-            if len(sigpeakinds)>1:
+            # Found at least 2 peaks. Also peak 1 and 2 must be >200ms apart
+            if len(sigpeakinds)>1 and sigpeakinds[1]-sigpeakinds[0]>40:
                 break
             
-            # Need to detect at least 2 peaks
-            learntime = learntime + 1
+            # Need to detect at least 2 peaks. Check the next window.
+            windownum = windownum + 1
         
         # Found at least 2 peaks. Use them to set parameters.
-        
+
         # Set running peak estimates to first values
-        sigpeak_F = wavelearn_F[sigpeakinds[0]]
-        sigpeak_I = wavelearn_I[sigpeakinds[0]]
-        noisepeak_F = wavelearn_F[noisepeakinds_F[0]]
-        noisepeak_I = wavelearn_I[noisepeakinds_I[0]]
+        self.sigpeak_F = wavelearn_F[sigpeakinds[0]]
+        self.sigpeak_I = wavelearn_I[sigpeakinds[0]]
+        self.noisepeak_F = wavelearn_F[noisepeakinds_F[0]]
+        self.noisepeak_I = wavelearn_I[noisepeakinds_I[0]]
         
         # Use all signal and noise peaks in learning window to estimate threshold
         # Based on steady state equation: thres = 0.75*noisepeak + 0.25*sigpeak
-        thres_F = 0.75*np.mean(wavelearn_F[noisepeakinds_F]) + 0.25*np.mean(wavelearn_F[sigpeakinds_F])
-        thres_I = 0.75*np.mean(wavelearn_I[noisepeakinds_I]) + 0.25*np.mean(wavelearn_I[sigpeakinds_I])
+        self.thres_F = 0.75*np.mean(wavelearn_F[noisepeakinds_F]) + 0.25*np.mean(wavelearn_F[sigpeakinds_F])
+        self.thres_I = 0.75*np.mean(wavelearn_I[noisepeakinds_I]) + 0.25*np.mean(wavelearn_I[sigpeakinds_I])
         # Alternatively, could skip all of that and do something very simple like thresh_F =  max(filtsig[:400])/3
         
         # Set the r-r history using the first r-r interval
         # The most recent 8 rr intervals
-        rr_history_unbound = [wavelearn_F[sigpeakinds[1]]-wavelearn_F[sigpeakinds[0]]]*8
+        self.rr_history_unbound = [wavelearn_F[sigpeakinds[1]]-wavelearn_F[sigpeakinds[0]]]*8
         # The most recent 8 rr intervals that fall within the acceptable low and high rr interval limits
-        rr_history_bound = [wavelearn_I[sigpeakinds[1]]-wavelearn_I[sigpeakinds[0]]]*8
+        self.rr_history_bound = [wavelearn_I[sigpeakinds[1]]-wavelearn_I[sigpeakinds[0]]]*8
         
-        rr_average_unbound = np.mean(rr_history_unbound)
-        rr_average_bound = np.mean(rr_history_bound)
+        self.rr_average_unbound = np.mean(self.rr_history_unbound)
+        self.rr_average_bound = np.mean(self.rr_history_bound)
         
-        # Wait... what is rr_average_unbound for then?
-        rr_low_limit = 0.92*rr_average_bound
-        rr_high_limit = 1.16*rr_average_bound
-        rr_missed_limit =  1.66*rr_average_bound
+        # what is rr_average_unbound ever used for?
+        self.rr_low_limit = 0.92*rr_average_bound
+        self.rr_high_limit = 1.16*rr_average_bound
+        self.rr_missed_limit =  1.66*rr_average_bound
         
-        return thresh_F, thresh_I, sigpeak_F, sigpeak_I,
-               noisepeak_F, noisepeak_I, rr_freeavg_F,
-               r_freeavg_I, rr_limitavg_F, rr_limitavg_I
+        # The previous r index. Used for:
+        # - refractory period (200ms, 40 samples)
+        # - t-wave inspection (360ms, 72 samples)
+        # - triggering searchback for missing r peaks (1.66*rr_average_bound)        
+        self.prev_r_ind = self.firstpeakind
+
+        # The qrs indices detected
+        self.qrs_inds = [sigpeakinds[0]]
+
+        return
 
 
 
