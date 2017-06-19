@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.signal as scisig
-
+import pdb
+import matplotlib.pyplot as plt
 
 class PanTompkins(object):
     """
@@ -14,7 +15,7 @@ class PanTompkins(object):
         self.sig = sig
         self.fs = fs
 
-        self.livesig = livesig
+        self.streamsig = streamsig
         
         if sig is not None:
             self.siglen = len(sig)
@@ -32,18 +33,57 @@ class PanTompkins(object):
         """
 
         # Resample the signal to 200Hz if necessary
-        self.resample()    
+        self.resample()
 
         # Bandpass filter the signal
-        self.sig_F = self.bandpass()
+        self.bandpass(plotsteps=False)
 
         # Calculate the moving wave integration signal
-        self.sig_I = self.mwi()
+        self.mwi(plotsteps=False)
 
         # Align the filtered and integrated signal with the original
         self.alignsignals()
-        
 
+
+
+        # Let's do some investigating!
+        # Compare sig, sig_F, and sig_I
+
+        # 1. Compare sig_F and sig_I peaks
+
+        fpeaks = findpeaks_radius(self.sig_F, 20)
+
+        ipeaks = findpeaks_radius(self.sig_I, 20)
+
+        fpeaks = fpeaks[np.where(self.sig_F[fpeaks]>4)[0]]
+        ipeaks = ipeaks[np.where(self.sig_I[ipeaks]>4)[0]]
+
+
+
+        #allpeaks = np.union1d(fpeaks, ipeaks)
+
+
+        print('fpeaks:', fpeaks)
+        print('ipeaks:', ipeaks)
+
+        plt.figure(1)
+        plt.plot(self.sig_F, 'b')
+        plt.plot(fpeaks, self.sig_F[fpeaks], 'b*')
+
+        plt.plot(self.sig_I,'r')
+        plt.plot(ipeaks, self.sig_I[ipeaks], 'r*')
+
+        #plt.plot(allpeaks, self.sig_F[allpeaks], 'g*')
+
+
+
+        plt.show()
+
+
+
+
+
+        
         # Initialize learning parameters via the two learning phases
         self.learnparams()
 
@@ -133,16 +173,14 @@ class PanTompkins(object):
 
     
         # Convert the peak indices back to the original fs if necessary
-        self.returnresample()
+        self.reverseresampleqrs()
         
         return
 
 
-
-    
     def resample(self):
         if self.fs != 200:
-            self.sig = scisig.resample(self.sig, int(self.siglen*200/fs))
+            self.sig = scisig.resample(self.sig, int(self.siglen*200/self.fs))
         return
     
     # Bandpass filter the signal from 5-15Hz
@@ -162,10 +200,10 @@ class PanTompkins(object):
             plt.plot(self.sig_F)
             plt.legend(['After LP', 'After LP+HP'])
             plt.show()
-        return
+        return 
 
     # Compute the moving wave integration waveform from the filtered signal
-    def mwi(sig, plotsteps):
+    def mwi(self, plotsteps):
         # Compute 5 point derivative
         a_deriv = [1]
         b_deriv = [1/4, 1/8, 0, -1/8, -1/4]
@@ -245,8 +283,8 @@ class PanTompkins(object):
         while (windownum+1)*learntime*200<self.siglen:
             wavelearn_F = self.sig_F[windownum*learntime*200:(windownum+1)*learntime*200]
             wavelearn_I = self.sig_I[windownum*learntime*200:(windownum+1)*learntime*200]
-            
-            # Find peaks in the signals
+
+            # Find peaks in the signal sections
             peakinds_F = findpeaks_radius(wavelearn_F, radius)
             peakinds_I = findpeaks_radius(wavelearn_I, radius)
             peaks_F = wavelearn_F[peakinds_F]
@@ -258,22 +296,24 @@ class PanTompkins(object):
             # Align peaks to minimum value and set to unit variance
             peaks_F = (peaks_F - min(peaks_F)) / np.std(peaks_F)
             peaks_I = (peaks_I - min(peaks_I)) / np.std(peaks_I)
-            sigpeakinds_F = np.where(peaks_F) >= 1.4
-            sigpeakinds_I = np.where(peaks_I) >= 1.4
+            sigpeakinds_F = np.where(peaks_F >= 1.4) 
+            sigpeakinds_I = np.where(peaks_I >= 1.4) 
             
             # Final signal peak when both signals agree
-            sigpeakinds = np.intersect1d(sigpeaks_F, sigpeaks_I)
+            sigpeakinds = np.intersect1d(sigpeakinds_F, sigpeakinds_I)
             # Noise peaks are the remainders
             noisepeakinds_F = np.setdiff1d(peakinds_F, sigpeakinds)
             noisepeakinds_I = np.setdiff1d(peakinds_I, sigpeakinds)
             
             # Found at least 2 peaks. Also peak 1 and 2 must be >200ms apart
             if len(sigpeakinds)>1 and sigpeakinds[1]-sigpeakinds[0]>40:
+                print('should be out')
                 break
             
             # Didn't find 2 satisfactory peaks. Check the next window.
             windownum = windownum + 1
-        
+            
+
         # Found at least 2 satisfactory peaks. Use them to set parameters.
 
         # Set running peak estimates to first values
@@ -428,14 +468,14 @@ class PanTompkins(object):
         else:
             return False
 
-    def returnresample(self):
+    def reverseresampleqrs(self):
         # Refactor the qrs indices to match the fs of the original signal
 
         self.qrs_inds = np.array(self.qrs_inds)
 
         if self.fs!=200:
             self.qrs_inds = self.qrs_inds*fs/200
-        
+
         self.qrs_inds = self.qrs_inds.astype('int64')
 
 
@@ -447,7 +487,7 @@ def pantompkins(sig, fs):
 
     detector = PanTompkins(sig=sig, fs=fs)
 
-    detect_qrs_static()
+    detector.detect_qrs_static()
 
     return detector.qrs_inds
 
@@ -470,7 +510,7 @@ def findpeaks_radius(sig, radius):
     peaklocs = []
     
     # Pad samples at start and end
-    sig = np.concatenate((np.ones(radius)*sig[0],sig, np.ones(radius)*sig[-1]))
+    sig = np.concatenate((np.ones(radius)*sig[0], sig, np.ones(radius)*sig[-1]))
     
     i=radius
     while i<siglen+radius:
