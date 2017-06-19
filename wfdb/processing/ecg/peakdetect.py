@@ -10,7 +10,7 @@ class PanTompkins(object):
     Works on static signals. In future update,
     will work on streaming ecg signal.
     """
-    def __init__(self, sig=None, fs=None, streamsig=None, ):
+    def __init__(self, sig=None, fs=None, streamsig=None):
         self.sig = sig
         self.fs = fs
 
@@ -119,7 +119,7 @@ class PanTompkins(object):
 
                 # Finally can classify as a signal peak
                 # Update running parameters
-                self.update_peak_params('s', i)
+                self.update_peak_params('ss', i)
 
                 continue
                 
@@ -132,13 +132,10 @@ class PanTompkins(object):
                 self.update_peak_params('nI', i)
 
     
-    # Convert the peak indices back to the original fs if necessary 
-    if fs!=200:
-        qrs = qrs*fs/200
-    qrs = qrs.astype('int64')
-    
-    
-    return
+        # Convert the peak indices back to the original fs if necessary
+        self.returnresample()
+        
+        return
 
 
 
@@ -345,7 +342,7 @@ class PanTompkins(object):
             self.qrs_inds.append(i)
 
             # Signal peak, regular threshold criteria
-            if peaktype == 'sr'
+            if peaktype == 'sr':
                 self.sigpeak_I = 0.875*self.sigpeak_I + 0.125*self.sig_I[i]
                 self.sigpeak_F = 0.875*self.sigpeak_F + 0.125*self.sig_F[i]
             else:
@@ -393,6 +390,15 @@ class PanTompkins(object):
 
         return
 
+
+    # QRS duration between 0.06s and 0.12s
+    # Check left half - 0.06s = 12 samples
+    qrscheckwidth = 12
+    # ST segment between 0.08 and 0.12s.
+    # T-wave duration between 0.1 and 0.25s.
+    # We are only analyzing left half for gradient
+    # Overall, check 0.12s to the left of the peak.
+    #tcheckwidth = 24
     def istwave(self, i):
         """
         Determine whether the coinciding peak index happens
@@ -408,14 +414,42 @@ class PanTompkins(object):
         # Parameter: Checking width of a qrs complex
         # Parameter: Checking width of a t-wave
 
-        # Compute 5 point derivative
         a_deriv = [1]
         b_deriv = [1/4, 1/8, 0, -1/8, -1/4]
-        sig_F_deriv = scisig.lfilter(b_deriv, a_deriv, self.sig_F)
-        
-        # Square the derivative
-        sig_F_deriv = np.square(sig_F_deriv)
 
+        lastqrsind= self.qrs_inds[:-1]
+
+        qrs_sig_F_deriv = scisig.lfilter(b_deriv, a_deriv, self.sig_F[lastqrsind-qrscheckwidth:lastqrsind])
+        checksection_sig_F_deriv = scisig.lfilter(b_deriv, a_deriv, self.sig_F[i-qrscheckwidth:i])
+
+        # Classified as a t-wave
+        if max(checksection_sig_F_deriv) < 0.5*max(qrs_sig_F_deriv):
+            return True
+        else:
+            return False
+
+    def returnresample(self):
+        # Refactor the qrs indices to match the fs of the original signal
+
+        self.qrs_inds = np.array(self.qrs_inds)
+
+        if self.fs!=200:
+            self.qrs_inds = self.qrs_inds*fs/200
+        
+        self.qrs_inds = self.qrs_inds.astype('int64')
+
+
+
+def pantompkins(sig, fs):
+    """
+    Pan Tompkins ECG peak detector
+    """
+
+    detector = PanTompkins(sig=sig, fs=fs)
+
+    detect_qrs_static()
+
+    return detector.qrs_inds
 
 
 # Determine whether the signal contains a peak at index ind.
@@ -429,6 +463,7 @@ def ispeak_radius(sig, siglen, ind, radius):
 # Find all peaks in a signal. Simple algorithm which marks a
 # peak if the <radius> samples on its left and right are
 # all not bigger than it.
+# Faster than calling ispeak_radius for every index.
 def findpeaks_radius(sig, radius):
     
     siglen = len(sig)
