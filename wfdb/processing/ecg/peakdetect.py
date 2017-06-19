@@ -10,7 +10,7 @@ class PanTompkins(object):
     Works on static signals. In future update,
     will work on streaming ecg signal.
     """
-    def __init__(self, sig=None, fs=None, streamsig=None):
+    def __init__(self, sig=None, fs=None, streamsig=None, ):
         self.sig = sig
         self.fs = fs
 
@@ -18,6 +18,12 @@ class PanTompkins(object):
         
         if sig is not None:
             self.siglen = len(sig)
+
+        # Feature to add
+        # "For irregular heart rates, the first threshold
+        # of each set is reduced by half so as to increase
+        # the detection sensitivity and to avoid missing beats"
+        #self.irregular_hr = irregular_hr
 
     def detect_qrs_static(self):
         """
@@ -49,16 +55,29 @@ class PanTompkins(object):
             # Number of indices from the previous r peak to this index
             last_r_distance = i - qrs_inds[-1]
 
+            # It has been very long since the last r peak
+            # was found. Search back for common 2 signal
+            # peaks and test using lower threshold
+            if last_r_distance > self.rr_missed_limit:
+
+                self.backsearch()
+                # Continue with this index whether or not
+                # a previous common peak was marked as qrs
+                last_r_distance = i - qrs_inds[-1]
+
             # Determine whether the current index is a peak
             # for each signal
             is_peak_F = ispeak(sig_F, self.siglen, i, 20)
             is_peak_I = ispeak(sig_I, self.siglen, i, 20)
             
+            # Keep track of common peaks that have not been classified as
+            # signal peaks for future backsearch
+            if is_peak_F and is_peak_I:
+                self.recent_commonpeaks.append(i)
+
             # Whether the current index is a signal peak or noise peak
             is_sigpeak_F = False
             is_sigpeak_I = False
-            is_noisepeak_F = False
-            is_noisepeak_I = False
             
             # If peaks are detected, classify them as signal or noise
             # for their respective channels
@@ -68,18 +87,18 @@ class PanTompkins(object):
                 if sig_F[i] > self.thresh_F:
                     is_sigpeak_F = True
                 # Did not satisfy signal peak criteria.
-                # Label as noise peak
+                # Classify as noise peak
                 else:
-                    is_noisepeak_F = True
+                    self.update_peak_params('nF', i)
                     
             if is_peak_I:
                 # Satisfied signal peak criteria for the channel
                 if sig_I[i] > self.thresh_I:
-                    is_peak_sig_I = True
+                    is_sigpeak_I = True
                 # Did not satisfy signal peak criteria.
-                # Label as noise peak
+                # Classify as noise peak
                 else:
-                    is_noisepeak_I = True
+                    self.update_peak_params('nI', i)
              
             # Check for double signal peak coincidence and at least >200ms (40 samples samples)
             # since the previous r peak
@@ -87,38 +106,31 @@ class PanTompkins(object):
             
             # The peak crosses thresholds for each channel and >200ms from previous peak
             if is_sigpeak:
-                
                 # If the rr interval < 360ms (72 samples), the peak is checked 
                 # to determine whether it is a T-Wave. This is the final test
                 # to run before the peak can be marked as a qrs complex.
                 if last_r_distance < 72:
-                    
-                
-                    # "If the maximal slope that occurs during this waveform
-                    # is less than half that of the QRS waveform that preceded it,
-                    # it is identified to be a T-wave"
+                    is_twave = self.istwave(i)
+                    # Classified as likely a t-wave, not a qrs.
+                    if is_twave:
+                        self.update_peak_params('nF', i)
+                        self.update_peak_params('nI', i)
+                        continue
 
-                    # Update running parameters
-                    
-                    sigpeak_I = 0.875*sigpeak_I + 0.125*sig_I[i]
-                    sigpeak_F = 0.875*sigpeak_I + 0.125*sig_I[i]
-                     
-                    last_r_ind = i
-                    rr_limitavg
-                    rr_limitavg
-                
+                # Finally can classify as a signal peak
+                # Update running parameters
+                self.update_peak_params('s', i)
 
-            # Not a signal peak. Update running parameters
-            # if any other peaks are detected
-            elif is_peak_F:
+                continue
                 
-            
-            last_r_distance = i - last_r_ind
-            
-            if last_r_distance > 
-    
-    
-    qrs = np.zeros(10)
+            # No double agreement of signal peak.
+            # Any individual peak that passed its threshold criterial
+            # will still be classified as noise peak.
+            elif is_sigpeak_F:
+                self.update_peak_params('nF', i)
+            elif is_sigpeak_I:
+                self.update_peak_params('nI', i)
+
     
     # Convert the peak indices back to the original fs if necessary 
     if fs!=200:
@@ -218,7 +230,7 @@ class PanTompkins(object):
           moments. Signal peaks are only defined when the same index is
           determined to be a peak in both signals. If fewer than 2 signal
           peaks are detected, shift to the next 2 window and try again.
-        - Using the classified estimated peaks, threshold1 is estimated as
+        - Using the classified estimated peaks, threshold is estimated as
           based on the steady state estimate equation: thres = 0.75*noisepeak + 0.25*sigpeak
           using the mean of the noisepeaks and signalpeaks instead of the
           running value.
@@ -262,10 +274,10 @@ class PanTompkins(object):
             if len(sigpeakinds)>1 and sigpeakinds[1]-sigpeakinds[0]>40:
                 break
             
-            # Need to detect at least 2 peaks. Check the next window.
+            # Didn't find 2 satisfactory peaks. Check the next window.
             windownum = windownum + 1
         
-        # Found at least 2 peaks. Use them to set parameters.
+        # Found at least 2 satisfactory peaks. Use them to set parameters.
 
         # Set running peak estimates to first values
         self.sigpeak_F = wavelearn_F[sigpeakinds[0]]
@@ -275,8 +287,8 @@ class PanTompkins(object):
         
         # Use all signal and noise peaks in learning window to estimate threshold
         # Based on steady state equation: thres = 0.75*noisepeak + 0.25*sigpeak
-        self.thres_F = 0.75*np.mean(wavelearn_F[noisepeakinds_F]) + 0.25*np.mean(wavelearn_F[sigpeakinds_F])
-        self.thres_I = 0.75*np.mean(wavelearn_I[noisepeakinds_I]) + 0.25*np.mean(wavelearn_I[sigpeakinds_I])
+        self.thresh_F = 0.75*np.mean(wavelearn_F[noisepeakinds_F]) + 0.25*np.mean(wavelearn_F[sigpeakinds_F])
+        self.thresh_I = 0.75*np.mean(wavelearn_I[noisepeakinds_I]) + 0.25*np.mean(wavelearn_I[sigpeakinds_I])
         # Alternatively, could skip all of that and do something very simple like thresh_F =  max(filtsig[:400])/3
         
         # Set the r-r history using the first r-r interval
@@ -292,21 +304,117 @@ class PanTompkins(object):
         self.rr_low_limit = 0.92*rr_average_bound
         self.rr_high_limit = 1.16*rr_average_bound
         self.rr_missed_limit =  1.66*rr_average_bound
-        
-        # The previous r index. Used for:
-        # - refractory period (200ms, 40 samples)
-        # - t-wave inspection (360ms, 72 samples)
-        # - triggering searchback for missing r peaks (1.66*rr_average_bound)        
-        self.prev_r_ind = self.firstpeakind
 
-        # The qrs indices detected
+        # The qrs indices detected.
+        # Initialize with the first signal peak
+        # detected during this learning phase
         self.qrs_inds = [sigpeakinds[0]]
 
         return
 
+    # Update parameters when a peak is found
+    def update_peak_params(self, peaktype, i):
+        
+        # Noise peak for filtered signal
+        if peaktype == 'nF':
+            self.noisepeak_F = 0.875*self.noisepeak_I + 0.125*self.sig_I[i]
+        # Noise peak for integral signal
+        elif peaktype == 'nI':
+            self.noisepeak_I = 0.875*self.noisepeak_I + 0.125*self.sig_I[i]
+        # Signal peak
+        else:
+            new_rr = i - self.qrs_inds[-1]
+
+            # The most recent 8 rr intervals
+            self.rr_history_unbound = self.rr_history_unbound[:-1].append(new_rr)
+            self.rr_average_unbound = self.rr_average_unbound[:-1]
+
+            # The most recent 8 rr intervals that fall within the acceptable low
+            # and high rr interval limits
+            if new_rr > self.r_low_limit and new_rr < self.r_high_limit:
+                self.rr_history_bound = self.rr_history_bound[:-1].append(new_rr)
+                self.rr_average_bound = np.mean(self.rr_history_bound)
+            
+                self.rr_low_limit = 0.92*rr_average_bound
+                self.rr_high_limit = 1.16*rr_average_bound
+                self.rr_missed_limit =  1.66*rr_average_bound
+
+            # Clear the common peaks since last r peak variable
+            self.recent_commonpeaks = []
+        
+            self.qrs_inds.append(i)
+
+            # Signal peak, regular threshold criteria
+            if peaktype == 'sr'
+                self.sigpeak_I = 0.875*self.sigpeak_I + 0.125*self.sig_I[i]
+                self.sigpeak_F = 0.875*self.sigpeak_F + 0.125*self.sig_F[i]
+            else:
+                # Signal peak, searchback criteria
+                self.sigpeak_I = 0.75*self.sigpeak_I + 0.25*self.sig_I[i]
+                self.sigpeak_F = 0.75*self.sigpeak_F + 0.25*self.sig_F[i]
+
+        return
 
 
+    def backsearch(self):
+        """
+        Search back for common 2 signal
+        peaks and test for qrs using lower thresholds
+        
+        "If the program does not find a QRS complex in
+        the time interval corresponding to 166 percent
+        of the current average RR interval, the maximal
+        peak deteted in that time interval that lies
+        between these two thresholds is considered to be
+        a possilbe QRS complex, and the lower of the two
+        thresholds is applied"
+        
+        Interpreting the above 'the maximal peak':
+        - A common peak in both sig_F and sig_I.
+        - The largest sig_F peak.
+        """
 
+        # No common peaks since the last r
+        if not self.recent_commonpeaks:
+            return
+
+        recentpeaks_F = self.sig_F[self.recent_commonpeaks]
+
+        # Overall signal index to inspect
+        maxpeak_ind = self.recent_commonpeaks[np.argmax(recentpeaks_F)]
+
+        # Test these peak values
+        sigpeak_F = self.sig_F[maxpeak_ind]
+        sigpeak_I = self.sig_I[maxpeak_ind]
+
+        # Thresholds passed for both signals. Found qrs.
+        if (sigpeak_F > self.thresh_F/2) and (sigpeak_I > self.thresh_I/2):
+            self.update_peak_params('ss', maxpeak_ind)
+
+        return
+
+    def istwave(self, i):
+        """
+        Determine whether the coinciding peak index happens
+        to be a t-wave instead of a qrs complex. 
+
+        "If the maximal slope that occurs during this waveform
+        is less than half that of the QRS waveform that preceded
+        it, it is identified to be a T wave"
+
+        Compare slopes in filtered signal only
+        """
+
+        # Parameter: Checking width of a qrs complex
+        # Parameter: Checking width of a t-wave
+
+        # Compute 5 point derivative
+        a_deriv = [1]
+        b_deriv = [1/4, 1/8, 0, -1/8, -1/4]
+        sig_F_deriv = scisig.lfilter(b_deriv, a_deriv, self.sig_F)
+        
+        # Square the derivative
+        sig_F_deriv = np.square(sig_F_deriv)
 
 
 
