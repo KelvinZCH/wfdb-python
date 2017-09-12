@@ -225,7 +225,7 @@ class GQRS(object):
         dv = dv1 << 1
         dv -= int(self.smv_at(self.t + self.c.dt2) - self.smv_at(self.t - self.c.dt2))
         dv = dv << 1
-        dv += dv1
+        dv += dv1for
         dv -= int(self.smv_at(self.t + self.c.dt3) - self.smv_at(self.t - self.c.dt3))
         dv = dv << 1
         dv += dv2

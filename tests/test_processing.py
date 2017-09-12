@@ -4,8 +4,8 @@ import numpy
 class test_processing():
 
     def test_1(self):
-        sig, fields = wfdb.srdsamp('sampledata/100')
-        ann = wfdb.rdann('sampledata/100', 'atr')
+        sig, fields = wfdb.srdsamp('/root/PycharmProjects/wfdb-python/sampledata/100')
+        ann = wfdb.rdann('/root/PycharmProjects/wfdb-python/sampledata/100', 'atr')
 
         fs = fields['fs']
         fs_target = 50
@@ -13,6 +13,8 @@ class test_processing():
         new_sig, new_ann = wfdb.processing.resample_singlechan(sig[:, 0], ann, fs, fs_target)
 
         expected_length = int(sig.shape[0]*fs_target/fs)
+
+        hp, sp = wfdb.processing.find_peaks(new_sig)
 
         assert new_sig.shape[0] == expected_length
 
